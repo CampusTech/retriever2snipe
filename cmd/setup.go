@@ -78,7 +78,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	// 3. Find or create custom fields
 	log.Info("Setting up custom fields...")
-	fieldMap, err := setupCustomFields(snipeClient, dryRun)
+	fieldMap, fieldIDs, err := setupCustomFields(snipeClient, dryRun)
 	if err != nil {
 		return fmt.Errorf("setting up custom fields: %w", err)
 	}
@@ -97,7 +97,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		log.Infof("  Using fieldset ID: %d", fieldsetID)
 
 		// Associate all custom fields with the chosen fieldset
-		if err := associateFieldsWithFieldset(snipeClient, fieldMap, fieldsetID); err != nil {
+		if err := associateFieldsWithFieldset(snipeClient, fieldIDs, fieldsetID); err != nil {
 			return fmt.Errorf("associating fields with fieldset: %w", err)
 		}
 	} else {
@@ -192,12 +192,13 @@ func setupStatusLabel(client *snipeit.Client, name, statusType string, dryRun bo
 }
 
 // setupCustomFields finds or creates custom fields needed by retriever2snipe.
-// Returns the custom_fields map (db_column_name -> retriever field name).
-func setupCustomFields(client *snipeit.Client, dryRun bool) (map[string]string, error) {
+// Returns the custom_fields map (db_column_name -> retriever field name) and
+// a map of db_column_name -> field ID for association.
+func setupCustomFields(client *snipeit.Client, dryRun bool) (map[string]string, map[string]int, error) {
 	// Get all existing custom fields
 	list, _, err := client.Fields.List(&snipeit.ListOptions{Limit: 500})
 	if err != nil {
-		return nil, fmt.Errorf("listing fields: %w", err)
+		return nil, nil, fmt.Errorf("listing fields: %w", err)
 	}
 
 	// Build lookup by name
@@ -213,6 +214,7 @@ func setupCustomFields(client *snipeit.Client, dryRun bool) (map[string]string, 
 	}
 
 	result := make(map[string]string)
+	fieldIDs := make(map[string]int)
 
 	// Fields we need and their retriever mapping
 	needed := []struct {
@@ -234,6 +236,7 @@ func setupCustomFields(client *snipeit.Client, dryRun bool) (map[string]string, 
 		if existing, ok := existingByName[f.snipeName]; ok {
 			log.Infof("  Found existing field: %s (ID %d, column %s)", f.snipeName, existing.id, existing.dbColumn)
 			result[existing.dbColumn] = f.retrieverField
+			fieldIDs[existing.dbColumn] = existing.id
 			continue
 		}
 
@@ -251,10 +254,10 @@ func setupCustomFields(client *snipeit.Client, dryRun bool) (map[string]string, 
 		}
 		resp, _, err := client.Fields.Create(field)
 		if err != nil {
-			return nil, fmt.Errorf("creating field %q: %w", f.snipeName, err)
+			return nil, nil, fmt.Errorf("creating field %q: %w", f.snipeName, err)
 		}
 		if resp.Status != "success" {
-			return nil, fmt.Errorf("creating field %q: status=%s message=%s", f.snipeName, resp.Status, resp.Message)
+			return nil, nil, fmt.Errorf("creating field %q: status=%s message=%s", f.snipeName, resp.Status, resp.Message)
 		}
 		dbCol := resp.Payload.DBColumnName
 		if dbCol == "" {
@@ -268,9 +271,10 @@ func setupCustomFields(client *snipeit.Client, dryRun bool) (map[string]string, 
 		}
 		log.Infof("  Created field: %s (ID %d, column %s)", f.snipeName, resp.Payload.ID, dbCol)
 		result[dbCol] = f.retrieverField
+		fieldIDs[dbCol] = resp.Payload.ID
 	}
 
-	return result, nil
+	return result, fieldIDs, nil
 }
 
 // pickOrCreateFieldset prompts the user to choose an existing fieldset or create a new one.
@@ -324,25 +328,9 @@ func pickOrCreateFieldset(client *snipeit.Client, scanner *bufio.Scanner) (int, 
 }
 
 // associateFieldsWithFieldset associates custom fields with a fieldset.
-func associateFieldsWithFieldset(client *snipeit.Client, fieldMap map[string]string, fieldsetID int) error {
-	// We need the field IDs, but we only have db_column_names in fieldMap.
-	// Fetch all fields again to get IDs.
-	list, _, err := client.Fields.List(&snipeit.ListOptions{Limit: 500})
-	if err != nil {
-		return fmt.Errorf("listing fields: %w", err)
-	}
-
-	dbColToID := make(map[string]int)
-	for _, row := range list.Rows {
-		dbColToID[row.DBColumnName] = row.ID
-	}
-
-	for dbCol := range fieldMap {
-		fieldID, ok := dbColToID[dbCol]
-		if !ok {
-			log.Warnf("Could not find field ID for %s, skipping association", dbCol)
-			continue
-		}
+// fieldIDs maps db_column_name -> field ID.
+func associateFieldsWithFieldset(client *snipeit.Client, fieldIDs map[string]int, fieldsetID int) error {
+	for dbCol, fieldID := range fieldIDs {
 		_, err := client.Fields.Associate(fieldID, fieldsetID)
 		if err != nil {
 			return fmt.Errorf("associating field %s (ID %d) with fieldset %d: %w", dbCol, fieldID, fieldsetID, err)

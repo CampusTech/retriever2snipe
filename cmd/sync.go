@@ -214,6 +214,9 @@ func (s *syncer) syncAll(devices []retriever.WarehouseDevice) error {
 		}
 
 		if err := s.syncDevice(device, i+1, len(devices)); err != nil {
+			if strings.Contains(err.Error(), "does not seem to exist") {
+				return fmt.Errorf("custom field configuration error: %w\n\nOne or more custom fields in your config are not associated with the fieldset used by your asset models.\nRun 'retriever2snipe setup' to create and associate the fields, or verify your custom_fields config matches your Snipe-IT instance.", err)
+			}
 			log.Errorf("[%d/%d] Error syncing device %s (serial: %s): %v", i+1, len(devices), device.ID, device.SerialNumber, err)
 			s.stats.errors++
 		}
