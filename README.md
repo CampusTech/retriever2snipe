@@ -17,6 +17,7 @@ Sync asset records from the [Retriever](https://helloretriever.com/) v2 API to [
 - Local data caching to avoid hitting Retriever's strict rate limits during development
 - Dry-run mode with optional debug payload output
 - Single-device sync by serial number or Retriever device ID
+- Optional Slack webhook notifications when new assets are created
 - Idempotent sync: only updates assets when data has actually changed
 - Deduplicates warehouse records by serial number (keeps latest deployment)
 
@@ -118,6 +119,7 @@ See [`config.yaml.example`](config.yaml.example) for all available options.
 | `SNIPEIT_API_KEY` | Snipe-IT API key |
 | `SNIPEIT_URL` | Snipe-IT base URL |
 | `RETRIEVER_CACHE_DIR` | Cache directory (default: `.cache`) |
+| `SLACK_WEBHOOK_URL` | Slack webhook URL for new asset notifications |
 
 ### Commands and Flags
 
@@ -167,6 +169,7 @@ See [`config.yaml.example`](config.yaml.example) for all available options.
 | `--warehouse-location-id` | Snipe-IT location ID for Retriever Warehouse |
 | `--serial` | Sync only the device with this serial number |
 | `--retriever-device-id` | Sync only the device with this Retriever device ID |
+| `--slack-webhook-url` | Slack webhook URL for new asset notifications |
 
 ## Status Mapping
 

@@ -36,6 +36,7 @@ func NewSyncCmd() *cobra.Command {
 	cmd.Flags().IntVar(&Cfg.DefaultStatusID, "default-status-id", 0, "Snipe-IT status label ID for new assets")
 	cmd.Flags().IntVar(&Cfg.DefaultModelID, "default-model-id", 0, "Snipe-IT default model ID")
 	cmd.Flags().IntVar(&Cfg.WarehouseLocationID, "warehouse-location-id", 0, "Snipe-IT location ID for Retriever Warehouse")
+	cmd.Flags().StringVar(&Cfg.SlackWebhookURL, "slack-webhook-url", "", "Slack webhook URL for new asset notifications")
 
 	return cmd
 }
@@ -295,6 +296,13 @@ func (s *syncer) syncDevice(device retriever.WarehouseDevice, idx, total int) er
 			}
 		}
 		s.stats.created++
+
+		// Send Slack notification for newly created assets
+		if s.cfg.SlackWebhookURL != "" && assetID != 0 {
+			if err := slackNotifyNewAsset(s.cfg.SlackWebhookURL, device, assetID, s.cfg.SnipeITURL); err != nil {
+				log.Warnf("Slack notification failed for %s: %v", serial, err)
+			}
+		}
 	}
 
 	// Attach CODD PDF if available

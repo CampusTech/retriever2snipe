@@ -36,6 +36,9 @@ type Config struct {
 
 	// Model mappings (Retriever "Manufacturer Model" -> Snipe-IT model ID)
 	ModelMappings map[string]int `yaml:"model_mappings"`
+
+	// Slack webhook URL for new asset notifications
+	SlackWebhookURL string `yaml:"slack_webhook_url"`
 }
 
 // RetrieverStatusLabel defines a Retriever status with its display name and Snipe-IT type.
@@ -147,6 +150,7 @@ func LoadConfig(cmd *cobra.Command) error {
 	applyEnv(&Cfg.SnipeITAPIKey, "SNIPEIT_API_KEY")
 	applyEnv(&Cfg.SnipeITURL, "SNIPEIT_URL")
 	applyEnv(&Cfg.CacheDir, "RETRIEVER_CACHE_DIR")
+	applyEnv(&Cfg.SlackWebhookURL, "SLACK_WEBHOOK_URL")
 
 	// 3. CLI flags override everything (cobra already parsed them into Cfg
 	//    for flags that were explicitly set; for unset flags we need to avoid
@@ -161,6 +165,7 @@ func LoadConfig(cmd *cobra.Command) error {
 	ApplyIntFlag(cmd, "default-status-id", &Cfg.DefaultStatusID)
 	ApplyIntFlag(cmd, "default-model-id", &Cfg.DefaultModelID)
 	ApplyIntFlag(cmd, "warehouse-location-id", &Cfg.WarehouseLocationID)
+	ApplyStringFlag(cmd, "slack-webhook-url", &Cfg.SlackWebhookURL)
 
 	// 4. Apply defaults for values still empty
 	if Cfg.CacheDir == "" {

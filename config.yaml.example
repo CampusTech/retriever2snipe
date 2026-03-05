@@ -76,3 +76,7 @@
 #   _snipeit_retriever_rating_5: rating
 #   _snipeit_ram_2: ram              # map to your existing Snipe-IT RAM field
 #   _snipeit_storage_3: disk         # map to your existing Snipe-IT Storage field
+
+# Slack notifications
+# Send a message to Slack when a new asset is created in Snipe-IT.
+# slack_webhook_url: "your-slack-webhook-url"  # or set SLACK_WEBHOOK_URL env var
