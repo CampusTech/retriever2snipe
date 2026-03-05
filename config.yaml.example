@@ -59,7 +59,8 @@
 # warehouse_location_id: 0 # Location ID for Retriever Warehouse
 
 # Custom field mappings (Snipe-IT db column name -> Retriever field name)
-# Run "retriever2snipe setup" to auto-create the fields and populate this section.
+# Run "retriever2snipe setup" to auto-create the Retriever-specific fields.
+# You can also map Retriever data to any existing Snipe-IT custom field.
 # Supported Retriever fields: id, has_charger, codd, legal_hold, ram, disk,
 #   os, os_version, screen_size, rating, processor, serial_number, manufacturer,
 #   model, device_series, release_year, status, current_location, asset_tag,
@@ -73,3 +74,5 @@
 #   _snipeit_retriever_codd_3: codd
 #   _snipeit_retriever_legal_hold_4: legal_hold
 #   _snipeit_retriever_rating_5: rating
+#   _snipeit_ram_2: ram              # map to your existing Snipe-IT RAM field
+#   _snipeit_storage_3: disk         # map to your existing Snipe-IT Storage field
