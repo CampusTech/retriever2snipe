@@ -1,0 +1,10 @@
+.cache/
+config.yaml
+mapping.yaml
+retriever2snipe
+.DS_Store
+*.yaml.bak
+
+# API spec reference files (large, not needed at runtime)
+Retriever API (v2).yaml
+snipe-it-rest-api.json
