@@ -98,7 +98,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	log.Infof("Loaded %d warehouse devices, %d deployments, %d device returns", len(devices), len(deployments), len(returns))
+	log.WithFields(log.Fields{
+		"warehouse_devices": len(devices),
+		"deployments":       len(deployments),
+		"device_returns":    len(returns),
+	}).Info("Loaded Retriever data")
 
 	// Filter to a single device if --serial or --device-id is provided
 	filterSerial, _ := cmd.Flags().GetString("serial")
@@ -120,7 +124,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("device not found in Retriever data: %s", identifier)
 		}
 		devices = filtered
-		log.Infof("Filtered to single device: %s (serial: %s)", devices[0].ID, devices[0].SerialNumber)
+		log.WithFields(log.Fields{"device_id": devices[0].ID, "serial": devices[0].SerialNumber}).Info("Filtered to single device")
 	}
 
 	// Deduplicate by serial number — keep the record with the latest initial_deployment.
@@ -152,7 +156,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(deduped) < len(devices) {
-		log.Infof("Deduplicated %d devices to %d unique serials", len(devices), len(deduped))
+		log.WithFields(log.Fields{"original": len(devices), "unique": len(deduped)}).Info("Deduplicated devices by serial number")
 	}
 	devices = deduped
 
@@ -176,10 +180,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize Snipe-IT client
+	log.Info("Connecting to Snipe-IT...")
 	snipeClient, err := NewSnipeClient()
 	if err != nil {
 		return fmt.Errorf("creating snipe-IT client: %w", err)
 	}
+
+	log.Infof("Starting retriever2snipe sync")
 
 	syncer := &syncer{
 		snipe:                snipeClient,
@@ -207,24 +214,54 @@ type syncer struct {
 }
 
 func (s *syncer) syncAll(devices []retriever.WarehouseDevice) error {
+	total := len(devices)
+	log.WithField("devices", total).Info("Using Retriever warehouse devices")
+
+	// Determine progress interval (every 50 devices, minimum)
+	progressInterval := 50
+	if total > 500 {
+		progressInterval = 100
+	}
+
 	for i, device := range devices {
 		if device.SerialNumber == "" {
-			log.Infof("[%d/%d] Skipping device %s: no serial number", i+1, len(devices), device.ID)
+			log.WithFields(log.Fields{"device_id": device.ID}).Info("Skipping device with no serial number")
 			s.stats.skipped++
 			continue
 		}
 
-		if err := s.syncDevice(device, i+1, len(devices)); err != nil {
+		if err := s.syncDevice(device, i+1, total); err != nil {
 			if strings.Contains(err.Error(), "does not seem to exist") {
 				return fmt.Errorf("custom field configuration error: %w\n\nOne or more custom fields in your config are not associated with the fieldset used by your asset models.\nRun 'retriever2snipe setup' to create and associate the fields, or verify your custom_fields config matches your Snipe-IT instance.", err)
 			}
-			log.Errorf("[%d/%d] Error syncing device %s (serial: %s): %v", i+1, len(devices), device.ID, device.SerialNumber, err)
+			log.WithFields(log.Fields{"serial": device.SerialNumber, "device_id": device.ID}).Errorf("Error syncing device: %v", err)
 			s.stats.errors++
+		}
+
+		// Progress milestone
+		if (i+1)%progressInterval == 0 {
+			log.WithFields(log.Fields{
+				"current": i + 1, "total": total,
+			}).Info("Progress: devices processed")
 		}
 	}
 
-	log.Infof("Sync complete: %d created, %d updated, %d skipped, %d errors",
-		s.stats.created, s.stats.updated, s.stats.skipped, s.stats.errors)
+	// Final summary
+	log.WithFields(log.Fields{
+		"total":   total,
+		"created": s.stats.created,
+		"updated": s.stats.updated,
+		"skipped": s.stats.skipped,
+		"errors":  s.stats.errors,
+	}).Info("Sync complete")
+
+	fmt.Printf("\nSync Results:\n")
+	fmt.Printf("  Total devices processed: %d\n", total)
+	fmt.Printf("  Assets created:          %d\n", s.stats.created)
+	fmt.Printf("  Assets updated:          %d\n", s.stats.updated)
+	fmt.Printf("  Assets skipped:          %d\n", s.stats.skipped)
+	fmt.Printf("  Errors:                  %d\n", s.stats.errors)
+
 	return nil
 }
 
@@ -249,18 +286,17 @@ func (s *syncer) syncDevice(device retriever.WarehouseDevice, idx, total int) er
 		asset := s.mapDeviceToAsset(device, existingAsset.Name, existingAsset.Notes)
 		needsUpdate, reason := assetNeedsUpdate(existingAsset, asset)
 		if !needsUpdate {
-			log.Infof("[%d/%d] Skipping asset %d (serial: %s) — no changes", idx, total, existingAsset.ID, serial)
+			log.WithFields(log.Fields{"serial": serial, "current": idx, "total": total}).Info("Skipped asset — no changes")
 			s.stats.skipped++
 			return nil
 		}
-		log.Debugf("[%d/%d] Asset %d needs update: %s", idx, total, existingAsset.ID, reason)
+		log.WithFields(log.Fields{"serial": serial, "asset_id": existingAsset.ID, "reason": reason}).Debug("Asset needs update")
 		if s.cfg.DryRun {
-			log.Infof("[%d/%d] DRY RUN: Would update asset %d (serial: %s)", idx, total, existingAsset.ID, serial)
+			log.WithFields(log.Fields{"serial": serial, "current": idx, "total": total}).Info("DRY RUN: Would update asset in Snipe-IT")
 			s.debugJSON("  Request", asset)
 			s.stats.updated++
 			return nil
 		}
-		log.Infof("[%d/%d] Updating asset %d (serial: %s)", idx, total, existingAsset.ID, serial)
 		resp, _, err := s.snipe.Assets.Update(existingAsset.ID, asset)
 		if err != nil {
 			return fmt.Errorf("updating asset %d: %w", existingAsset.ID, err)
@@ -268,17 +304,17 @@ func (s *syncer) syncDevice(device retriever.WarehouseDevice, idx, total int) er
 		if resp.Status == "error" {
 			return fmt.Errorf("updating asset %d: %s", existingAsset.ID, resp.Message)
 		}
+		log.WithFields(log.Fields{"serial": serial, "current": idx, "total": total}).Info("Updated asset in Snipe-IT")
 		s.stats.updated++
 	} else {
 		// Create new asset
 		asset := s.mapDeviceToAsset(device, "", "")
 		if s.cfg.DryRun {
-			log.Infof("[%d/%d] DRY RUN: Would create asset (serial: %s, model: %s %s)", idx, total, serial, device.Manufacturer, device.Model)
+			log.WithFields(log.Fields{"serial": serial, "model": strings.TrimSpace(device.Manufacturer + " " + device.Model), "current": idx, "total": total}).Info("DRY RUN: Would create asset in Snipe-IT")
 			s.debugJSON("  Request", asset)
 			s.stats.created++
 			return nil
 		}
-		log.Infof("[%d/%d] Creating asset (serial: %s, model: %s %s)", idx, total, serial, device.Manufacturer, device.Model)
 		resp, _, err := s.snipe.Assets.Create(asset)
 		if err != nil {
 			return fmt.Errorf("creating asset: %w", err)
@@ -295,12 +331,13 @@ func (s *syncer) syncDevice(device retriever.WarehouseDevice, idx, total int) er
 				assetID = created.Rows[0].ID
 			}
 		}
+		log.WithFields(log.Fields{"serial": serial, "current": idx, "total": total}).Info("Created asset in Snipe-IT")
 		s.stats.created++
 
 		// Send Slack notification for newly created assets
 		if s.cfg.SlackWebhookURL != "" && assetID != 0 {
 			if err := slackNotifyNewAsset(s.cfg.SlackWebhookURL, device, assetID, s.cfg.SnipeITURL); err != nil {
-				log.Warnf("Slack notification failed for %s: %v", serial, err)
+				log.WithFields(log.Fields{"serial": serial, "error": err}).Warn("Slack notification failed")
 			}
 		}
 	}
@@ -315,7 +352,7 @@ func (s *syncer) syncDevice(device retriever.WarehouseDevice, idx, total int) er
 		}
 		if coddURL != "" {
 			if err := s.attachCODD(assetID, serial, coddURL); err != nil {
-				log.Warnf("Failed to attach CODD for serial %s: %v", serial, err)
+				log.WithFields(log.Fields{"serial": serial, "error": err}).Warn("Failed to attach CODD")
 			}
 		}
 	}
