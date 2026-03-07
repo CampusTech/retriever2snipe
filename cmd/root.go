@@ -91,9 +91,8 @@ func NewRetrieverClient() *retriever.Client {
 // NewSnipeClient creates a new Snipe-IT client using the global config.
 func NewSnipeClient() (*snipeit.Client, error) {
 	opts := &snipeit.ClientOptions{
-		RateLimiter:    snipeit.NewTokenBucketRateLimiter(2, 5),
-		DisableRetries: true,
-		Logger:         &snipeLogger{},
+		RateLimiter: snipeit.NewTokenBucketRateLimiter(2, 5),
+		Logger:      &snipeLogger{},
 	}
 	return snipeit.NewClientWithOptions(Cfg.SnipeITURL, Cfg.SnipeITAPIKey, opts)
 }
