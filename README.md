@@ -1,6 +1,10 @@
 # retriever2snipe
 
-Sync asset records from the [Retriever](https://helloretriever.com/) v2 API to [Snipe-IT](https://snipeitapp.com/) asset management. Inspired by [jamf2snipe](https://github.com/grokability/jamf2snipe).
+**The missing link between Retriever and your asset inventory.**
+
+retriever2snipe syncs every device from [Retriever](https://helloretriever.com/) directly into [Snipe-IT](https://snipeitapp.com/) — mapping warehouse inventory, deployment tracking, device returns, and certificates of data destruction into fully populated Snipe-IT assets. Inspired by [jamf2snipe](https://github.com/grokability/jamf2snipe).
+
+![Screenshot of a MacBook Air asset synced from Retriever into Snipe-IT](.github/assets/demo-asset.png)
 
 ## Features
 
@@ -18,16 +22,30 @@ Sync asset records from the [Retriever](https://helloretriever.com/) v2 API to [
 - Dry-run mode with optional debug payload output
 - Single-device sync by serial number or Retriever device ID
 - Optional Slack webhook notifications when new assets are created
+- Automatic retry with exponential backoff for Snipe-IT API rate limits
 - Idempotent sync: only updates assets when data has actually changed
 - Deduplicates warehouse records by serial number (keeps latest deployment)
 
-## Requirements
+## Prerequisites
 
-- Go 1.25 or later
 - A [Retriever](https://helloretriever.com/) account with an API key
 - A [Snipe-IT](https://snipeitapp.com/) instance with an API key
 
 ## Installation
+
+**Download a pre-built binary** (recommended) from the [latest release](https://github.com/CampusTech/retriever2snipe/releases/latest):
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/CampusTech/retriever2snipe/releases/latest/download/retriever2snipe-darwin-arm64 -o retriever2snipe
+chmod +x retriever2snipe
+
+# Linux (amd64)
+curl -L https://github.com/CampusTech/retriever2snipe/releases/latest/download/retriever2snipe-linux-amd64 -o retriever2snipe
+chmod +x retriever2snipe
+```
+
+Or install with Go:
 
 ```bash
 go install github.com/CampusTech/retriever2snipe@latest
@@ -224,12 +242,30 @@ custom_fields:
 
 All supported Retriever fields: `id`, `has_charger`, `codd`, `legal_hold`, `rating`, `ram`, `disk`, `os`, `os_version`, `screen_size`, `processor`, `serial_number`, `manufacturer`, `model`, `device_series`, `release_year`, `status`, `current_location`, `asset_tag`, `recipient_source`, `notes`.
 
+## Slack Notifications
+
+retriever2snipe can send a Slack notification whenever a new device is created in Snipe-IT. Messages use Slack Block Kit with device details, specs, and a link to the asset in Snipe-IT.
+
+To enable, [create an incoming webhook](https://api.slack.com/messaging/webhooks) and configure via any of:
+
+```yaml
+# config.yaml
+slack_webhook_url: "https://hooks.slack.com/services/T.../B.../..."
+```
+
+```bash
+# Environment variable
+export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T.../B.../..."
+
+# CLI flag
+retriever2snipe sync --slack-webhook-url="https://hooks.slack.com/services/T.../B.../..."
+```
+
 ## Rate Limits
 
-- **Retriever API**: 60 read requests/minute, 500 read requests/day
-- The built-in client limits itself to 50 requests/minute to stay safely under the limit
-- **Snipe-IT API**: The client uses a token bucket rate limiter (2 requests/second, burst of 5)
-- Use `download` + `--use-cache` during development to avoid burning your daily Retriever quota
+- **Retriever API**: 60 read requests/minute, 500 read requests/day. The built-in client limits itself to 50 requests/minute to stay safely under the limit.
+- **Snipe-IT API**: [120 requests/minute](https://snipe-it.readme.io/reference/api-throttling). The client uses a token bucket rate limiter (2 requests/second, burst of 5) and automatically retries 429/5xx responses with exponential backoff.
+- Use `download` + `--use-cache` during development to avoid burning your daily Retriever quota.
 
 ## License
 
